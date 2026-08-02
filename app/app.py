@@ -64,6 +64,7 @@ def delete_item(id):
         return jsonify({"error": "not found"}), 404
     return jsonify({"message": "deleted"}), 200
 
+# @app.route("/api/items/<id>", methods=["DELETE"])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
