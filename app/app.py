@@ -27,7 +27,6 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
-
 @app.route("/api/items", methods=["GET"])
 def list_items():
     return jsonify([serialize(i) for i in items.find()]), 200
