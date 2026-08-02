@@ -6,7 +6,10 @@ from flask import Flask, jsonify, request
 from pymongo import MongoClient
 
 app = Flask(__name__)
-client = MongoClient(os.getenv("MONGO_URL", "mongodb://localhost:27017/"))
+client = MongoClient(
+    os.getenv("MONGO_URL", "mongodb://localhost:27017/"),
+    serverSelectionTimeoutMS=5000,
+)
 db = client["hepapi"]
 items = db["items"]
 
@@ -17,6 +20,11 @@ def serialize(doc):
         if hasattr(value, "isoformat"):
             doc[key] = value.isoformat()
     return doc
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
 
 
 @app.route("/api/items", methods=["GET"])
