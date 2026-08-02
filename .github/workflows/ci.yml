@@ -1,0 +1,78 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build the Image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          BRANCH_NAME=$(echo "$GITHUB_REF_NAME" | tr '[:upper:]' '[:lower:]')
+          GSHA=${GITHUB_SHA::7}
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "GSHA=$GSHA" >> $GITHUB_ENV
+
+          if [[ "$BRANCH_NAME" == "develop" ]]; then
+            docker build -t ${DOCKERHUB_USERNAME}/dev-hepapi:$GSHA ./app
+          elif [[ "$BRANCH_NAME" == "main" ]]; then
+            docker build -t ${DOCKERHUB_USERNAME}/hepapi:$GSHA ./app
+          fi
+
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Push image to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [[ "$BRANCH_NAME" == "develop" ]]; then
+            docker push ${DOCKERHUB_USERNAME}/dev-hepapi:$GSHA
+          elif [[ "$BRANCH_NAME" == "main" ]]; then
+            docker push ${DOCKERHUB_USERNAME}/hepapi:$GSHA
+          fi
+
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone gitops repository
+        run: git clone https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/${{ secrets.GITOPS_REPO }}.git gitops
+
+      - name: Update image tags in manifests
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        working-directory: ./gitops
+        run: |
+          if [[ "$BRANCH_NAME" == "develop" ]]; then
+            cd apps/dev
+            NEW_IMAGE="${DOCKERHUB_USERNAME}/dev-hepapi:${GSHA}"
+          elif [[ "$BRANCH_NAME" == "main" ]]; then
+            cd apps/prod
+            NEW_IMAGE="${DOCKERHUB_USERNAME}/hepapi:${GSHA}"
+          fi
+
+          sed -i "s|^image:.*|image: ${NEW_IMAGE}|g" values.yaml
+
+      - name: Commit and push changes
+        working-directory: ./gitops
+        run: |
+          if [[ "$BRANCH_NAME" == "develop" ]]; then
+            git add apps/dev/values.yaml
+          elif [[ "$BRANCH_NAME" == "main" ]]; then
+            git add apps/prod/values.yaml
+          fi
+
+          git commit -m "[skip ci] Bump Version to $GSHA"
+          git push https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/${{ secrets.GITOPS_REPO }}.git
